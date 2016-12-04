@@ -4,6 +4,8 @@ TODO
             `praw.exceptions.APIException: TOO_LONG: 'this is too long (max: 10000)' on field 'text'`
 2016/12/05  Use api.pushshift.io to capture comments & submissions
 2016/12/05  Add botlist to avoid replying to bots
+2016/12/05  Use https://www.reddit.com/r/learnpython/comments/.json?sort=new or 
+            https://apiv2.pushshift.io/search/comments/
 
 DONE
 ------
