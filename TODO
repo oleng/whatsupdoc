@@ -1,0 +1,56 @@
+TODO
+-----
+2016/12/05  Catch exception from Reddit posting limit:
+            `praw.exceptions.APIException: TOO_LONG: 'this is too long (max: 10000)' on field 'text'`
+
+
+DONE
+------
+2016/12/04  fine tune definition body
+2016/12/04  clean up generated Markdown (another filter pass utility)
+2016/12/01  Freeze user call command 
+2016/11/30  build logger that also prints out to stdout
+2016/11/18  v3/v2 capability
+2016/11/18  found way to serve based on minor version instead of just v3/v2
+2016/11/20  fixed regex to full pagename (`DOC_SECTION`) in [ metadata ] `_part` variable for html filenames with `.` character
+Using env var instead of YAML config file to hold variables
+
+
+Database
+    |__ Table
+        |__ Row - Column
+                - Column
+                - Column
+
+DocBot_DB
+    |__ Sections
+            |__ Syntax      - id
+            |               - date_created
+            |               - version_id
+            |               - version_major
+            |               - version_minor
+            |               - version_micro
+            |               - topic
+            |               - section
+            |               - keyword
+            |               - url
+            |               - header
+            |               - body
+            |               - footer
+
+DocBot_DB
+    |__ Library
+            |__ classmethod - id
+            |               - date_created
+            |               - version_id: 3
+            |               - version_major: 3
+            |               - version_minor: 5
+            |               - version_micro: 2
+            |               - topic: standard library
+            |               - section: built-in functions
+            |               - keyword: classmethod
+            |               - url
+            |               - header
+            |               - body
+            |               - footer
+
