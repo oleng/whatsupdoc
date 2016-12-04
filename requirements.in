@@ -6,4 +6,3 @@ html2text>=2016.9.19
 simplejson>=3.10.0
 sqlalchemy>=1.1.4
 psycopg2>=2.6.2         # sqlalchemy
-# requests>=2.12.3        # praw
