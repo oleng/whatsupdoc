@@ -17,6 +17,7 @@ import time
 from datetime import datetime
 import logging, logging.config
 import praw
+import requests
 import ast
 from sqlalchemy import create_engine, exists
 from sqlalchemy.orm import sessionmaker
@@ -33,8 +34,10 @@ passwd      = os.getenv('syntaxbot_password')
 db_config   = os.getenv('DATABASE_URL')
 # Reddit related variables
 baseurl     = 'docs.python.org'
-sub_name    = 'learnpython'
-
+sub_list    = ['SyntaxBot', 'learnpython']
+sortfilter  = 'new'
+timefilter  = 'day'
+postlimit   = 100
 # regex pattern for capturing definition url. Need to have everything 
 # captured between the identifiers
 urlpattern = re.compile(r"""(?P<version>[32]/)(?P<topic>\w+/)
@@ -77,6 +80,7 @@ def contain_url(comment):
 
     _url = '{0}'.format( found.group(0) )
     log.debug('Contains valid url: %s', found.groupdict())
+
     return found
 
 
@@ -162,13 +166,15 @@ def reply(comment):
     else:
         log.info('Nothing to reply for %s', comment.id)
 
-def scan(subreddit, sort, time, limit):
+def scan_submission(subreddit, sort, time, limit):
     ''' Search for the queries in the sub using reddit search, time filtered 
     '''
     search_result = r.subreddit(subreddit).search('{0}'.format(
                     baseurl), sort=sort, time_filter=time, limit=limit)
+    log.info('Search result: sub %s, found %s', search_result.url, 
+        search_result.yielded)
     log.debug('Search result: {}'.format(search_result.__dict__))
-    if search_result is None:
+    if search_result is None or search_result.yielded == 0:
         log.info('No matching result.')
         return None
     for thread in search_result:
@@ -200,15 +206,38 @@ def scan(subreddit, sort, time, limit):
                 continue
             else:
                 reply(comment)
+    # Finished scanning this sub
+    return True
 
 
-def whatsub_doc(subreddit):
+def scan_comments(subreddit):
+    """Use Pushshift API to search comments, hardcoded to default to the last
+    3 days. See https://redd.it/5gawot for API v2 documentation"""
+    _endpoint = 'https://apiv2.pushshift.io/reddit/comment/search/'
+    _fields = ['author', 'body', 'created_utc', 'id', 'link_author', 
+                'link_created_utc', 'link_id', 'link_num_comments', 
+                'link_permalink', 'parent_id', 'url']
+    _args = '?q={0}&subreddit={1}&sort=desc&after=3d&fields={2}'.format(
+                baseurl, subreddit, ','.join(_fields))
+    url = _endpoint + _args
+    r = requests.get(url)
+    log.debug('[%s] sub: %s, content: %s', r, subreddit, r.content)
+
+def whatsub_doc(subreddits):
     """Main bot activities & limit rate requests to oauth.reddit.com"""
     log.info('Whatsub, doc?')
-    sort = 'new'
-    time = 'week'
-    limit = 100
-    scan(subreddit, sort, time, limit)
+    for sub in subreddits:
+        log.info('Searching for submissions.')
+        submissions = scan_submission(sub, sortfilter, timefilter, postlimit)
+        log.info('Bot sleep interval to avoid spamming %s: 30s', sub)
+        if submissions is not None:
+            # avoid spamming-like activity, add some sleep interval    
+            log.info('Finished scanning %s, sleeping for 30s.', sub)
+            time.sleep(30)
+        log.info('Searching for comments.')
+        comments = scan_comments(sub)
+
+    log.info('Done.')
 
 
 def login():
@@ -233,10 +262,10 @@ if __name__ == '__main__':
     ''' capture exceptions '''
     try:
         r = login()
-        whatsub_doc(sub_name)
+        whatsub_doc(sub_list)
     except ConnectionError as no_connection:
         log.error(no_connection, exc_info=True)
-        time.sleep(100)
+        time.sleep(10)
         log.info('Reconnecting in 10secs...')
         r = login()
-        whatsub_doc(sub_name)
+        whatsub_doc(sub_list)
