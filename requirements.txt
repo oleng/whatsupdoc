@@ -11,10 +11,10 @@ first==2.0.1              # via pip-tools
 html2text==2016.9.19
 lxml==3.6.4
 pip-tools==1.8.0
-praw==4.0.0b22
-prawcore==0.2.1           # via praw
+praw==4.0.0
+prawcore==0.3.0           # via praw
 psycopg2==2.6.2
-requests==2.12.0          # via praw, prawcore, update-checker
+requests==2.12.3          # via praw, prawcore, update-checker
 simplejson==3.10.0
 six==1.10                 # via pip-tools, praw
 sqlalchemy==1.1.4
