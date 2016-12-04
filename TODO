@@ -2,7 +2,8 @@ TODO
 -----
 2016/12/05  Catch exception from Reddit posting limit:
             `praw.exceptions.APIException: TOO_LONG: 'this is too long (max: 10000)' on field 'text'`
-
+2016/12/05  Use api.pushshift.io to capture comments & submissions
+2016/12/05  Add botlist to avoid replying to bots
 
 DONE
 ------
