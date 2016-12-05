@@ -18,6 +18,7 @@ from datetime import datetime
 import logging, logging.config
 import praw
 import requests
+import simplejson as json
 import ast
 from sqlalchemy import create_engine, exists
 from sqlalchemy.orm import sessionmaker
@@ -38,50 +39,46 @@ sub_list    = ['SyntaxBot', 'learnpython']
 sortfilter  = 'new'
 timefilter  = 'day'
 postlimit   = 100
+# !! Add this to db
+botlist     = ['Justinsaccount', 'Rhomboid']
 # regex pattern for capturing definition url. Need to have everything 
 # captured between the identifiers
-urlpattern = re.compile(r"""(?P<version>[32]/)(?P<topic>\w+/)
+urlpattern = re.compile(r"""(?P<version>[\d\.]?/)(?P<topic>\w+/)
     (?P<page>[\w\.]+\.html)(?P<syntax>[\?#\w=\.]+)""", re.I | re.X)
 
+def sleep():
+    return time.sleep(10)
 
-def check_replied(comment):
-    """check if comment is already saved in profile"""
-    log.debug('Checking if replied... %s', comment)
+def check_replied(comment_id):
+    """check if comment (by id) is already saved in profile"""
+    log.debug('Checking if replied... %s', comment_id)
     saved_comments = r.user.me().saved()
     for saved in saved_comments:
-        log.debug('Match post? saved: %s, %s', saved, comment)
-        if saved == comment.id:
-            log.info('Found as saved: %s, %s', saved, comment)
+        if saved == comment_id:
+            log.info('Found as saved: %s, %s', saved, comment_id)
             # save data to db
             return True
         else: 
-            log.info('This saved not matching comment. %s, %s', saved, comment)
+            log.info('Saved: %s, not matching comment %s', saved, comment_id)
             continue
     # not saved yet
     return False
 
 
 def contain_url(comment):
-    """Searching valid url in comment, if found, return the regex pattern match, 
-    if not return False"""
+    """Searching valid url in text passed in arg comment, if found, return 
+    the regex pattern match, else return False"""
     # to find if submision or comment : stackoverflow.com/a/17431054/6882768
-    if not hasattr(comment, 'body'):
-        log.error('A submission. Searching selftext %s', comment.id)
-        found = re.search(urlpattern, comment.selftext)
-        log.debug('Contains valid URL? %s : %s', found, comment.selftext)
+    found = re.search(urlpattern, comment)
+    log.debug('Contains valid URL? %s : %s', found, comment)
+    # only URLs from /library/ for now
+    if found is not None and found.group('topic') == 'library/':    
+        _url = '{0}'.format( found.group(0) )
+        log.debug('Contains valid url: %s', found.groupdict())
+        return found
     else:
-        log.debug('Comment in submission: %s', comment.submission)
-        found = re.search(urlpattern, comment.body)
-        log.debug('Contains valid URL? %s : %s', found, comment.body)
-
-    if found is None:
         log.error('Error: cannot find url in %s', comment)
         return False
-
-    _url = '{0}'.format( found.group(0) )
-    log.debug('Contains valid url: %s', found.groupdict())
-
-    return found
 
 
 def querydb(data):
@@ -97,7 +94,9 @@ def querydb(data):
         log.debug('Stripped: %s', _syntax)
     else:
         _syntax = data.group(4)
-    _version = data.group(1).rstrip('/')
+    # since only version 3 stored in Heroku postgres lets replace _version
+    # _version = data.group(1).rstrip('/')
+    _version = 3
     _topic = data.group(2).rstrip('/')
     _module = data.group(3).rstrip('.html')
 
@@ -145,37 +144,38 @@ def format_response(data, comment):
 
 
 def reply(comment):
-    """Reply user comment"""
+    """Reply user comment. Needs reddit instance."""
     log.info('Start replying...{}'.format( {comment.id: 
         [datetime.utcfromtimestamp(comment.created_utc), comment.author.name]}))
-    response_data = querydb(contain_url(comment))
+    # log.debug(comment.__dict__)
+    db_data = querydb(contain_url(comment.body))
     # pass comment too for logging purpose
-    bot_response = format_response(response_data, comment)
+    bot_response = format_response(db_data, comment)
     log.debug('Reply message: %s', bot_response)
     if bot_response:
-        comment.reply(bot_response)
-        comment.save(category='comment_replied')
+        # comment.reply(bot_response)
+        # comment.save(category='comment_replied')
+        log.info('Pausing')
         justnow = datetime.utcnow()
-        log.info('Pause: 5secs.')
-        time.sleep(5)
+        sleep()
         log.info('Checking if reply posted:...')  
-        if check_replied(comment):
+        if check_replied(comment.id):
             log.info('Replied and saved: %s', comment.id)
         else:
             log.error('Comment %s not saved at %s', comment.id, justnow)
     else:
         log.info('Nothing to reply for %s', comment.id)
 
+
 def scan_submission(subreddit, sort, time, limit):
-    ''' Search for the queries in the sub using reddit search, time filtered 
-    '''
+    ''' Search for the queries in the submissions using reddit search'''
     search_result = r.subreddit(subreddit).search('{0}'.format(
                     baseurl), sort=sort, time_filter=time, limit=limit)
     log.info('Search result: sub %s, found %s', search_result.url, 
         search_result.yielded)
     log.debug('Search result: {}'.format(search_result.__dict__))
     if search_result is None or search_result.yielded == 0:
-        log.info('No matching result.')
+        log.info('scan_submissions: No matching result.')
         return None
     for thread in search_result:
         ''' get OP thread / submission to iterate comment/replies '''
@@ -186,22 +186,25 @@ def scan_submission(subreddit, sort, time, limit):
         log.info('Processing comment tree: {} [{}]: {}'.format(
             submission, submission.author, submission.comments.list() ))
         # check OP
-        op_replied = check_replied(submission)
+        op_replied = check_replied(submission.id)
         if op_replied:
             log.info('Skipping submission %s: replied', submission)
         elif not op_replied:
             reply(submission)
-        # check comment forest
+        # check comment forest (should we still do this after pushshift is used?)
         for comment in submission.comments.list(): 
             # skip own & replied comment
             if comment.author == botlogin:
                 log.info('Skipping own comment: %s', comment)
                 continue
-            elif check_replied(comment):
+            elif comment.author in botlist:
+                log.info('Skipping bot comment: %s', comment.author)
+                continue
+            elif check_replied(comment.id):
                 log.info('Skipping comment %s: replied', comment)
                 continue
             # skip non-query comment
-            elif not contain_url(comment):
+            elif not contain_url(comment.selftext):
                 log.info('Skipping comment %s: no url found', comment)
                 continue
             else:
@@ -220,24 +223,62 @@ def scan_comments(subreddit):
     _args = '?q={0}&subreddit={1}&sort=desc&after=3d&fields={2}'.format(
                 baseurl, subreddit, ','.join(_fields))
     url = _endpoint + _args
-    r = requests.get(url)
-    log.debug('[%s] sub: %s, content: %s', r, subreddit, r.content)
+    req = requests.get(url)
+    log.info('[%s] %s', req.status_code, req.headers['content-type'])
+    status = req.status_code
+    if status == 200:
+        # log.debug('content: %s', r.text)
+        result = req.json()
+        for data in result['data']:
+            log.info('Start sorting comment search result.')
+            # skip own & replied comment
+            if data['author'] == botlogin:
+                log.info('Skipping own comment: %s', data['id'])
+                continue
+            elif data['author'] in botlist:
+                log.info('Skipping bot comment: %s', data['author'])
+                continue
+            elif check_replied(data['id']):
+                log.info('Skipping comment %s: replied', data['id'])
+                continue
+            # skip non-query comment
+            elif not contain_url(data['body']):
+                log.info('Skipping comment %s: no url found', data['id'])
+                continue
+            else:
+                # get reddit.comment instance
+                from praw.models import Comment
+                comment = Comment(r, id=data['id'])
+                reply(comment)
+                log.info('Pausing')
+                sleep()
+    else:
+        log_error = reddb(
+            error_url=url,
+            error_log='status: {0}'.format(status)
+            )
+        session.add(log_error)
+        session.commit()
+        log.info('%s. Logged to db', status)
+        log.debug('[%s] code: %s, url: %s.', log_error.error_logtime,
+            log_error.error_log, log_error.error_url)
+        # add some code here to notify this status
 
 def whatsub_doc(subreddits):
     """Main bot activities & limit rate requests to oauth.reddit.com"""
     log.info('Whatsub, doc?')
     for sub in subreddits:
-        log.info('Searching for submissions.')
+        log.info('Searching %s for submissions.', sub)
         submissions = scan_submission(sub, sortfilter, timefilter, postlimit)
-        log.info('Bot sleep interval to avoid spamming %s: 30s', sub)
         if submissions is not None:
             # avoid spamming-like activity, add some sleep interval    
-            log.info('Finished scanning %s, sleeping for 30s.', sub)
-            time.sleep(30)
+            log.info('Finished scanning %s, Pausing.', sub)
+            sleep()
         log.info('Searching for comments.')
         comments = scan_comments(sub)
 
-    log.info('Done.')
+    log.info('Done. Closing SQLAlchemy session.')
+    session.close()
 
 
 def login():
@@ -256,7 +297,7 @@ def login():
 if __name__ == '__main__':
     log = logging.getLogger(__name__)
     logging.config.dictConfig(ast.literal_eval(os.getenv('WHATSUPDOC_CFG')))
-    engine = create_engine(db_config, echo=True)
+    engine = create_engine(db_config, echo=False)
     Session = sessionmaker(bind=engine)
     session = Session()
     ''' capture exceptions '''
@@ -265,7 +306,7 @@ if __name__ == '__main__':
         whatsub_doc(sub_list)
     except ConnectionError as no_connection:
         log.error(no_connection, exc_info=True)
-        time.sleep(10)
         log.info('Reconnecting in 10secs...')
+        sleep()
         r = login()
         whatsub_doc(sub_list)
