@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 # load logging config from env variable
 logging.config.dictConfig(ast.literal_eval(os.getenv('LOG_CFG')))
 db_config = os.getenv('DATABASE_URL')
+
 engine = create_engine(db_config, echo=True, isolation_level="READ COMMITTED")
 
 Base = declarative_base()
@@ -52,14 +53,17 @@ class RedditActivity(Base):
     __tablename__ = "RedditActivity"
     
     id              = Column(Integer, primary_key=True)
-    comment_id      = Column(String(25), nullable=False)
-    username        = Column(String(100), nullable=False)
-    created_utc     = Column(DateTime, default=datetime.utcnow)
-    query_keyword   = Column(String, nullable=False)
+    comment_id      = Column(String(25))
+    username        = Column(String(100))
+    created_utc     = Column(DateTime)
+    query_keyword   = Column(String)
     query_version   = Column(Integer)
     comment_data    = Column(String)    # permalink, submission_id
     replied         = Column(String(10))
     repliedtime     = Column(DateTime, default=datetime.utcnow)
+    error_url       = Column(String)
+    error_log       = Column(String)
+    error_logtime   = Column(DateTime, default=datetime.utcnow)
 
 ########################################################################
  
